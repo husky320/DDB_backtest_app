@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
+_OPENER = request.build_opener(request.ProxyHandler({}))
+
 
 def _request_json(
     method: str,
@@ -22,7 +24,7 @@ def _request_json(
     req = request.Request(url=url, data=data, headers=headers, method=method.upper())
 
     try:
-        with request.urlopen(req, timeout=timeout) as resp:
+        with _OPENER.open(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8", errors="replace")
             status = int(resp.status)
     except error.HTTPError as exc:
@@ -42,7 +44,7 @@ def _request_json(
 def _request_text(url: str, timeout: int = 60) -> tuple[int, str]:
     req = request.Request(url=url, headers={"Accept": "text/plain"}, method="GET")
     try:
-        with request.urlopen(req, timeout=timeout) as resp:
+        with _OPENER.open(req, timeout=timeout) as resp:
             return int(resp.status), resp.read().decode("utf-8", errors="replace")
     except error.HTTPError as exc:
         return int(exc.code), exc.read().decode("utf-8", errors="replace")

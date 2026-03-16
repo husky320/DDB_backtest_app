@@ -594,10 +594,10 @@ bench
                     attempt_warnings.extend(self._ensure_timing_signal_alignment(merged))
                     attempt_warnings.extend(self._validate_timing_config(merged))
 
-                script_text = self._registry.load_script(template_id)
-                script_text, script_warnings = self._sanitize_framework_script(script_text)
+                framework_script = self._registry.load_script(template_id)
+                framework_script, script_warnings = self._sanitize_framework_script(framework_script)
                 attempt_warnings.extend(script_warnings)
-                run_script(script_text)
+                run_script(framework_script)
                 exec_script = self._build_exec_script(template, merged, run_id=run_id)
                 raw = run_script(exec_script)
                 if template.strategy_type == "combo":
@@ -623,7 +623,6 @@ bench
         duration_ms = round((time.perf_counter() - perf_start) * 1000, 3)
 
         script_name = self._registry.script_filename(template_id)
-        framework_02 = self._registry.load_script("combo_02")
         code_files: list[dict[str, Any]] = []
         if factor_code.strip():
             code_files.append(
@@ -653,10 +652,10 @@ bench
         )
         code_files.append(
             {
-                "name": "02_backtest_framework_template_02.dos",
-                "kind": "framework_02",
+                "name": f"02_{script_name}",
+                "kind": "framework_template",
                 "included": True,
-                "content": framework_02,
+                "content": framework_script,
             }
         )
 
@@ -672,6 +671,7 @@ bench
             warnings=warnings,
             execution=execution,
             code_files=code_files,
+            applied_config=dict(merged),
         )
 
     def get_trade_page(

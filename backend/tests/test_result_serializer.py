@@ -35,6 +35,7 @@ def test_serializer_extracts_kpis_and_equity():
     assert result["equity"][0]["benchmarkValue"] == 1.0
     assert result["equity"][1]["benchmarkValue"] == 1.01
     assert len(result["trades"]) == 1
+    assert result["no_trade"] is False
 
 
 def test_serializer_marks_degraded_when_using_fallback_equity():
@@ -57,3 +58,26 @@ def test_serializer_marks_degraded_when_using_fallback_equity():
     )
     assert result["degraded"] is True
     assert "fallback_equity_curve" in result["degraded_reasons"]
+    assert result["no_trade"] is True
+    assert "no_trade_records" in result["degraded_reasons"]
+    assert result["no_trade_reason"]
+
+
+def test_serializer_exposes_applied_config():
+    serializer = ResultSerializer()
+    raw = {
+        "returnSummary": pd.DataFrame([{"totalReturn": 0.0, "numTrades": 0}]),
+        "dailyTotalPortfolios": pd.DataFrame([{"tradeDate": "2024-01-01", "totalPortfolios": 100.0}]),
+        "tradeDetails": pd.DataFrame([]),
+    }
+
+    result = serializer.serialize(
+        "r3",
+        "combo_01",
+        raw,
+        applied_config={"benchmark": "000002.SZ", "holdingPeriod": 20},
+    )
+
+    assert result["applied_config"]["benchmark"] == "000002.SZ"
+    assert result["degraded"] is True
+    assert result["no_trade"] is True

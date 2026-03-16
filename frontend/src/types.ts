@@ -48,6 +48,9 @@ export interface BacktestResult {
   degraded?: boolean;
   degraded_reasons?: string[];
   warnings: string[];
+  applied_config?: Record<string, unknown>;
+  no_trade?: boolean;
+  no_trade_reason?: string;
   kpis: Record<string, number>;
   summary: Record<string, unknown>;
   equity: Array<{

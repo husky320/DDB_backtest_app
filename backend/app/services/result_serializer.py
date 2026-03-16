@@ -98,10 +98,12 @@ class ResultSerializer:
         warnings: list[str] | None = None,
         execution: dict[str, Any] | None = None,
         code_files: list[dict[str, Any]] | None = None,
+        applied_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         warnings = warnings or []
         execution = execution or {}
         code_files = code_files or []
+        applied_config = applied_config or {}
         if not isinstance(raw, dict):
             return {
                 "run_id": run_id,
@@ -110,9 +112,12 @@ class ResultSerializer:
                 "warnings": warnings,
                 "execution": execution,
                 "code_files": code_files,
+                "applied_config": applied_config,
                 "kpis": {},
                 "tables": {},
                 "equity": [],
+                "no_trade": False,
+                "no_trade_reason": "",
             }
 
         tables: dict[str, list[dict[str, Any]]] = {}
@@ -133,7 +138,16 @@ class ResultSerializer:
             degraded_reasons.append("empty_equity_table")
         if not trade_details and "fallback equity curve" in warnings_lower:
             degraded_reasons.append("no_trade_with_fallback_equity")
+        no_trade = len(trade_details) == 0
+        if no_trade:
+            degraded_reasons.append("no_trade_records")
         degraded_reasons = sorted(set(degraded_reasons))
+        no_trade_reason = ""
+        if no_trade:
+            if "fallback equity curve" in warnings_lower:
+                no_trade_reason = "本次任务未产生任何成交，且净值曲线来自基准回退结果。"
+            else:
+                no_trade_reason = "本次任务未产生任何成交，可能是条件过严、标的范围过窄，或区间内没有触发信号。"
 
         return {
             "run_id": run_id,
@@ -144,6 +158,9 @@ class ResultSerializer:
             "warnings": warnings,
             "execution": execution,
             "code_files": code_files,
+            "applied_config": applied_config,
+            "no_trade": no_trade,
+            "no_trade_reason": no_trade_reason,
             "kpis": self._extract_kpis(return_summary),
             "summary": return_summary[0] if return_summary else {},
             "equity": self._extract_equity(daily_total),

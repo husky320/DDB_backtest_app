@@ -137,6 +137,7 @@ export function BacktestConfigPage() {
               <option value="000002.SZ">万科 A (000002.SZ)</option>
               <option value="000300.SH">沪深 300 (000300.SH)</option>
             </select>
+            <span className="muted">当前环境默认推荐使用万科 A；如基准分钟数据缺失，系统会在任务结果中明确提示回退。</span>
           </div>
           <div className="field-column">
             <label>买入优先级</label>

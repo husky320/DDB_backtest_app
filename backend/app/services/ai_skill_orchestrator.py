@@ -224,7 +224,7 @@ class AISkillOrchestrator:
         if holding_period > 0:
             parts.append(f"持有{holding_period}天")
 
-        benchmark = str(config.get("benchmark", "000300.SH")).strip()
+        benchmark = str(config.get("benchmark", "000002.SZ")).strip()
         if benchmark:
             parts.append(f"基准设置为{self._benchmark_map.get(benchmark, benchmark)}")
 
@@ -268,7 +268,9 @@ class AISkillOrchestrator:
         max_drawdown = self._safe_float(best_kpis.get("maxDrawdown"))
         sharpe_ratio = self._safe_float(best_kpis.get("sharpeRatio"))
         best_hold = max(10, int(self._safe_float(best_config.get("holdingPeriod"), 60)))
-        benchmark = self._benchmark_map.get(str(best_config.get("benchmark", "000300.SH")), "沪深300")
+        benchmark = self._benchmark_map.get(str(best_config.get("benchmark", "000002.SZ")), "万科A")
+        if benchmark == "沪深300":
+            benchmark = "万科A"
 
         current_summary = {
             "task_count": len(tasks),
@@ -299,9 +301,9 @@ class AISkillOrchestrator:
             f"示例：总市值>20000000，成交额>500000000，股价站上10日线买入，股价跌破5日线卖出，持有{best_hold}天，基准设置为{benchmark}。",
         ]
         diversified_examples = [
-            "示例：市盈率<30，KDJ金叉买入，KDJ死叉卖出，持有20天，基准设置为沪深300。",
-            "示例：成交额>500000000，MACD金叉买入，MACD死叉卖出，持有15天，基准设置为沪深300。",
-            "示例：总市值>20000000，股价站上20日线买入，股价跌破10日线卖出，持有30天，基准设置为沪深300。",
+            "示例：市盈率<30，KDJ金叉买入，KDJ死叉卖出，持有20天，基准设置为万科A。",
+            "示例：成交额>500000000，MACD金叉买入，MACD死叉卖出，持有15天，基准设置为万科A。",
+            "示例：总市值>20000000，股价站上20日线买入，股价跌破10日线卖出，持有30天，基准设置为万科A。",
         ]
 
         return {
@@ -460,6 +462,6 @@ class AISkillOrchestrator:
         return [
             "把回测区间改成 2023-01-01 到 2023-12-31",
             "把最大持股数调到10，单日最大买入调到3",
-            "基准改成沪深300，并加入市盈率和总市值条件",
+            "基准改成万科A，并加入市盈率和总市值条件",
             "切换到个股择时模板，股票用600519.SH，然后运行回测",
         ]

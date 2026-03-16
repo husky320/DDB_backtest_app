@@ -43,6 +43,7 @@ function degradedReasonLabel(reason: string): string {
     fallback_equity_curve: "使用了基准回退净值曲线",
     empty_equity_table: "未返回有效净值主表",
     no_trade_with_fallback_equity: "无交易且使用回退净值",
+    no_trade_records: "回测区间内没有产生成交记录",
   };
   return mapping[reason] || reason;
 }
@@ -65,6 +66,14 @@ function formatSimpleValue(value: unknown): string {
   if (value === null || value === undefined) return "-";
   if (typeof value === "boolean") return value ? "是" : "否";
   return String(value);
+}
+
+function benchmarkDisplay(value: unknown): string {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  if (text === "000300.SH") return "沪深300 (000300.SH)";
+  if (text === "000002.SZ") return "万科A (000002.SZ)";
+  return text;
 }
 
 function renderConfigValue(value: unknown): React.ReactNode {
@@ -139,12 +148,17 @@ function RequestSnapshot({
   const request = isRecord(detail.request) ? detail.request : {};
   const userConfig = isRecord(request.user_config) ? request.user_config : {};
   const aiPatch = isRecord(request.ai_patch) ? request.ai_patch : null;
+  const appliedConfig = isRecord(detail.result?.applied_config) ? detail.result?.applied_config : {};
   const templateFromRequest = typeof request.template_id === "string" ? request.template_id : detail.template_id;
   const autoFallback =
     typeof request.auto_fallback_benchmark === "boolean" ? request.auto_fallback_benchmark : undefined;
   const defaultConfig = templateDefaults[String(templateFromRequest)] || {};
   const effectiveConfig: UnknownRecord = { ...defaultConfig, ...userConfig };
   const hasUserOverrides = Object.keys(userConfig).length > 0;
+  const requestedBenchmark = userConfig.benchmark ?? defaultConfig.benchmark;
+  const appliedBenchmark = appliedConfig.benchmark;
+  const benchmarkChanged =
+    hasMeaningfulValue(requestedBenchmark) && hasMeaningfulValue(appliedBenchmark) && String(requestedBenchmark) !== String(appliedBenchmark);
 
   const basicFields: SnapshotField[] = [
     { key: "startDate", label: "开始日期" },
@@ -218,6 +232,14 @@ function RequestSnapshot({
               ? "以下为提交该任务时的策略因子与回测参数（模板默认 + 用户覆盖），可用于复盘和对比。"
               : "该任务未提交自定义参数，以下展示模板默认配置。"}
           </p>
+          {benchmarkChanged ? (
+            <div className="warning-box inline-warning">
+              <strong>实际执行修正：</strong>
+              <span>
+                请求基准为 {benchmarkDisplay(requestedBenchmark)}，实际执行时调整为 {benchmarkDisplay(appliedBenchmark)}。
+              </span>
+            </div>
+          ) : null}
 
           <SnapshotGroup title="基础设置" config={effectiveConfig} fields={basicFields} />
           <SnapshotGroup title="因子设置" config={effectiveConfig} fields={factorFields} />
@@ -506,6 +528,8 @@ function ResultDetail({
   const kpis = result.kpis || {};
   const chartRows = buildChartRows(result);
   const effectiveConfig = buildEffectiveConfig(detail, templateDefaults);
+  const requestedConfig = isRecord(detail.request) && isRecord(detail.request.user_config) ? detail.request.user_config : {};
+  const appliedConfig = isRecord(result.applied_config) ? result.applied_config : {};
   const strategyIndicatorTags = useMemo(() => buildStrategyIndicatorTags(effectiveConfig), [effectiveConfig]);
   const { visual: visualIndicatorOptions, staticTags: staticStrategyTags } = useMemo(
     () => buildVisualIndicatorOptions(strategyIndicatorTags),
@@ -514,7 +538,11 @@ function ResultDetail({
   const codeFiles = result.code_files || [];
   const factorCode = codeFiles.find((item) => item.kind === "factor_processing");
   const runCode = codeFiles.find((item) => item.kind === "backtest_run");
-  const frameworkCode = codeFiles.find((item) => item.kind === "framework_02");
+  const frameworkCode = codeFiles.find((item) => item.kind === "framework_template" || item.kind === "framework_02");
+  const requestedBenchmark = requestedConfig.benchmark ?? effectiveConfig.benchmark;
+  const actualBenchmark = appliedConfig.benchmark ?? requestedBenchmark;
+  const benchmarkAdjusted =
+    hasMeaningfulValue(requestedBenchmark) && hasMeaningfulValue(actualBenchmark) && String(requestedBenchmark) !== String(actualBenchmark);
 
   const [tradePage, setTradePage] = useState(1);
   const [copiedCodeKey, setCopiedCodeKey] = useState("");
@@ -560,9 +588,9 @@ function ResultDetail({
     },
     {
       key: "code-02",
-      name: frameworkCode?.name || "02_backtest_framework_template_02.dos",
+      name: frameworkCode?.name || "02_backtest_framework_template.dos",
       included: true,
-      content: frameworkCode?.content || "// 未获取到模板 02 的框架代码。",
+      content: frameworkCode?.content || "// 未获取到当前任务的框架模板代码。",
     },
   ];
 
@@ -589,6 +617,7 @@ function ResultDetail({
         <h3>{detail.strategy_label || "任务结果总览"}</h3>
         <p className="muted">模板：{templateId}</p>
         <p className="muted">创建时间：{datetimeLabel(detail.created_at || result.execution?.started_at)}</p>
+        <p className="muted">实际执行基准：{benchmarkDisplay(actualBenchmark)}</p>
         {result.degraded ? (
           <div className="degraded-box">
             <strong>降级完成：</strong>
@@ -597,6 +626,20 @@ function ResultDetail({
                 ? (result.degraded_reasons || []).map((item) => degradedReasonLabel(item)).join("；")
                 : "结果可用但存在数据完整性风险"}
             </span>
+          </div>
+        ) : null}
+        {benchmarkAdjusted ? (
+          <div className="warning-box">
+            <strong>基准已自动回退：</strong>
+            <span>
+              请求基准为 {benchmarkDisplay(requestedBenchmark)}，实际执行基准为 {benchmarkDisplay(actualBenchmark)}。
+            </span>
+          </div>
+        ) : null}
+        {result.no_trade ? (
+          <div className="warning-box no-trade-box">
+            <strong>本次任务无成交：</strong>
+            <span>{result.no_trade_reason || "当前策略在回测区间内没有触发有效成交。"}</span>
           </div>
         ) : null}
       </section>
@@ -811,6 +854,20 @@ function ResultDetail({
             <span>{result.warnings.length}</span>
           </div>
         </div>
+        {result.warnings.length > 0 ? (
+          <details className="warning-details" open>
+            <summary>查看执行告警明细</summary>
+            <div className="warning-list">
+              {result.warnings.map((item, index) => (
+                <div key={`${index}-${item}`} className="warning-item">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : (
+          <p className="muted">本次任务没有额外执行告警。</p>
+        )}
       </section>
 
       <section className="card">

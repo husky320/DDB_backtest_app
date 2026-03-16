@@ -593,6 +593,27 @@ button:disabled {
   gap: 4px;
 }
 
+.warning-box {
+  margin-top: 8px;
+  border: 1px solid rgba(107, 192, 255, 0.42);
+  background: rgba(10, 49, 81, 0.34);
+  color: #d8f0ff;
+  border-radius: 10px;
+  padding: 9px 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.warning-box.no-trade-box {
+  border-color: rgba(245, 189, 72, 0.52);
+  background: rgba(92, 60, 10, 0.32);
+  color: #ffe6b8;
+}
+
+.warning-box.inline-warning {
+  margin-bottom: 10px;
+}
+
 .request-snapshot {
   border-color: rgba(79, 196, 240, 0.36);
   background: linear-gradient(160deg, rgba(10, 31, 62, 0.84), rgba(8, 25, 52, 0.78));
@@ -968,6 +989,52 @@ details pre {
 
 .execution-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.warning-details {
+  margin-top: 12px;
+  border: 1px solid rgba(116, 166, 230, 0.22);
+  border-radius: 10px;
+  background: rgba(8, 22, 46, 0.54);
+  overflow: hidden;
+}
+
+.warning-details summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
+  color: #d8eeff;
+  font-weight: 600;
+}
+
+.warning-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.warning-details summary::before {
+  content: "▸";
+  color: #9ac8e8;
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.warning-details[open] summary::before {
+  content: "▾";
+}
+
+.warning-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.warning-item {
+  border-left: 3px solid rgba(83, 204, 255, 0.72);
+  border-radius: 10px;
+  background: rgba(7, 18, 40, 0.74);
+  padding: 9px 10px;
+  line-height: 1.6;
+  color: #d7efff;
 }
 
 .code-file-grid {

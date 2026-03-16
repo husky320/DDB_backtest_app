@@ -48,7 +48,7 @@ type SemanticHints = {
 };
 
 const DEFAULT_SEMANTIC_TEXT =
-  "示例：总市值>20000000，股价站上5日线买入，MACD金叉买入，持有60天，基准设置为沪深300。";
+  "示例：总市值>20000000，股价站上5日线买入，MACD金叉买入，持有60天，基准设置为万科A。";
 
 const FUNDAMENTAL_PRESETS: Record<string, Record<Side, FundamentalPreset[]>> = {
   pe: {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,18 +23,37 @@ class DolphinDBScriptRegistry:
         self._path_cache: dict[str, Path] = {}
 
     def _discover_script_root(self, root: Path) -> Path:
-        preferred = root / "DolphinDB" / "DDB_BT"
-        if preferred.exists():
-            return preferred
-
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            candidate = entry / "DDB_BT"
+        env_root = os.getenv("DOLPHINDB_SCRIPT_ROOT", "").strip()
+        if env_root:
+            candidate = Path(env_root).expanduser()
             if candidate.exists():
                 return candidate
 
-        return preferred
+        search_bases: list[Path] = [root]
+        parent = root.parent
+        if parent != root:
+            search_bases.append(parent)
+
+        explicit_candidates = [
+            root / "DolphinDB" / "DDB_BT",
+            parent / "DolphinDB" / "DDB_BT",
+            parent / "CYGG" / "DDB_BT",
+        ]
+        for candidate in explicit_candidates:
+            if candidate.exists():
+                return candidate
+
+        for base in search_bases:
+            if not base.exists():
+                continue
+            for entry in sorted(base.iterdir()):
+                if not entry.is_dir():
+                    continue
+                candidate = entry / "DDB_BT"
+                if candidate.exists():
+                    return candidate
+
+        return explicit_candidates[0]
 
     def _build_templates(self) -> dict[str, TemplateDefinition]:
         combo_base = {
