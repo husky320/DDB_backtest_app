@@ -81,3 +81,27 @@ def test_serializer_exposes_applied_config():
     assert result["applied_config"]["benchmark"] == "000002.SZ"
     assert result["degraded"] is True
     assert result["no_trade"] is True
+
+
+def test_serializer_fixes_placeholder_win_rate_from_trade_counts():
+    serializer = ResultSerializer()
+    raw = {
+        "returnSummary": pd.DataFrame(
+            [
+                {
+                    "totalReturn": 1.0,
+                    "winRate": 0,
+                    "dailyWinningRate": 0.59375,
+                    "winningTradesCount": 105,
+                    "losingTradesCount": 61,
+                    "numTrades": 165,
+                }
+            ]
+        ),
+        "dailyTotalPortfolios": pd.DataFrame([{"tradeDate": "2024-01-01", "totalPortfolios": 100.0}]),
+        "tradeDetails": pd.DataFrame([{"symbol": "000001.SZ", "direction": 1}]),
+    }
+
+    result = serializer.serialize("r4", "combo_01", raw)
+
+    assert round(result["kpis"]["winRate"], 6) == round(105 / (105 + 61), 6)

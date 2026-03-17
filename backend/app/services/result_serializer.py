@@ -9,6 +9,13 @@ import pandas as pd
 
 
 class ResultSerializer:
+    def _to_float(self, value: Any) -> float | None:
+        try:
+            number = float(value)
+        except Exception:
+            return None
+        return number if np.isfinite(number) else None
+
     def normalize_value(self, value: Any) -> Any:
         if isinstance(value, (datetime, date, pd.Timestamp)):
             return value.isoformat()
@@ -49,8 +56,29 @@ class ResultSerializer:
         for key in wanted:
             if key in row:
                 kpis[key] = row[key]
-        if "winRate" not in kpis and "dailyWinningRate" in row:
-            kpis["winRate"] = row["dailyWinningRate"]
+        raw_win_rate = self._to_float(row.get("winRate"))
+        daily_winning_rate = self._to_float(row.get("dailyWinningRate"))
+        winning_trades = self._to_float(row.get("winningTradesCount", row.get("winningTrades")))
+        losing_trades = self._to_float(row.get("losingTradesCount"))
+
+        derived_trade_win_rate: float | None = None
+        if winning_trades is not None and losing_trades is not None and winning_trades + losing_trades > 0:
+            derived_trade_win_rate = winning_trades / (winning_trades + losing_trades)
+
+        if raw_win_rate is None:
+            if derived_trade_win_rate is not None:
+                kpis["winRate"] = derived_trade_win_rate
+            elif daily_winning_rate is not None:
+                kpis["winRate"] = daily_winning_rate
+        elif raw_win_rate <= 0:
+            if derived_trade_win_rate is not None and derived_trade_win_rate > 0:
+                kpis["winRate"] = derived_trade_win_rate
+            elif daily_winning_rate is not None and daily_winning_rate > 0:
+                kpis["winRate"] = daily_winning_rate
+            else:
+                kpis["winRate"] = raw_win_rate
+        else:
+            kpis["winRate"] = raw_win_rate
         return kpis
 
     def _normalize_series(self, values: list[Any]) -> list[float | None]:

@@ -102,6 +102,13 @@ export interface BacktestTaskDetail extends BacktestTaskSummary {
   result?: BacktestResult | null;
 }
 
+export interface TradePageResponse {
+  page: number;
+  page_size: number;
+  total: number;
+  items: Array<Record<string, unknown>>;
+}
+
 export interface AIChatResponse {
   allowed_actions: string[];
   blocked: boolean;

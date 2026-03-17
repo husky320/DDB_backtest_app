@@ -12,6 +12,7 @@ import {
   LLMConfig,
   SemanticAnalyzeResponse,
   StrategyIdeaResponse,
+  TradePageResponse,
   TemplateMeta,
 } from "../types";
 
@@ -93,8 +94,17 @@ export async function runBacktest(payload: {
   return requestWithFallback<BacktestRunStart>("post", "/backtests/run", payload);
 }
 
-export async function fetchRun(runId: string): Promise<BacktestTaskDetail> {
-  return requestWithFallback<BacktestTaskDetail>("get", `/backtests/${runId}`);
+export async function fetchRun(
+  runId: string,
+  options?: {
+    includeTrades?: boolean;
+    includeTables?: boolean;
+  }
+): Promise<BacktestTaskDetail> {
+  return requestWithFallback<BacktestTaskDetail>("get", `/backtests/${runId}`, undefined, {
+    include_trades: options?.includeTrades ?? false,
+    include_tables: options?.includeTables ?? false,
+  });
 }
 
 export async function fetchBacktests(limit = 200): Promise<BacktestTaskSummary[]> {
@@ -104,6 +114,17 @@ export async function fetchBacktests(limit = 200): Promise<BacktestTaskSummary[]
 
 export async function deleteBacktest(runId: string): Promise<{ ok: boolean; run_id: string }> {
   return requestWithFallback<{ ok: boolean; run_id: string }>("delete", `/backtests/${runId}`);
+}
+
+export async function fetchTradePage(
+  runId: string,
+  page = 1,
+  pageSize = 50
+): Promise<TradePageResponse> {
+  return requestWithFallback<TradePageResponse>("get", `/backtests/${runId}/trades`, undefined, {
+    page,
+    page_size: pageSize,
+  });
 }
 
 export async function chatAI(payload: { message: string; current_config: Record<string, unknown> }): Promise<AIChatResponse> {

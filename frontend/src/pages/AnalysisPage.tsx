@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { deleteBacktest, fetchBacktests, fetchRun, fetchTemplates } from "../api/client";
+import { deleteBacktest, fetchBacktests, fetchRun, fetchTemplates, fetchTradePage } from "../api/client";
 import { useAppState } from "../state/AppStateContext";
 import type { BacktestResult, BacktestTaskDetail, BacktestTaskSummary, TemplateMeta } from "../types";
 
@@ -11,10 +11,25 @@ function metric(value: unknown): string {
   return String(value);
 }
 
+function metricInteger(value: unknown): string {
+  const number = toFiniteNumber(value);
+  if (number === null) return value === null || value === undefined ? "-" : String(value);
+  return `${Math.round(number)}`;
+}
+
 function metricPercent(value: unknown): string {
   if (typeof value === "number") return Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : "-";
   if (value === null || value === undefined) return "-";
   return String(value);
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function datetimeLabel(raw: string | undefined | null): string {
@@ -42,8 +57,8 @@ function degradedReasonLabel(reason: string): string {
   const mapping: Record<string, string> = {
     fallback_equity_curve: "使用了基准回退净值曲线",
     empty_equity_table: "未返回有效净值主表",
-    no_trade_with_fallback_equity: "无交易且使用回退净值",
-    no_trade_records: "回测区间内没有产生成交记录",
+    no_trade_with_fallback_equity: "无成交且使用回退净值",
+    no_trade_records: "回测区间内没有生成交易记录",
   };
   return mapping[reason] || reason;
 }
@@ -74,6 +89,31 @@ function benchmarkDisplay(value: unknown): string {
   if (text === "000300.SH") return "沪深300 (000300.SH)";
   if (text === "000002.SZ") return "万科A (000002.SZ)";
   return text;
+}
+
+const TASK_LIST_LIMIT = 120;
+const LIST_POLL_ACTIVE_MS = 3000;
+const LIST_POLL_IDLE_MS = 12000;
+const DETAIL_POLL_MS = 2000;
+
+function tasksEqual(a: BacktestTaskSummary[], b: BacktestTaskSummary[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i];
+    const right = b[i];
+    if (
+      left.run_id !== right.run_id ||
+      left.status !== right.status ||
+      left.created_at !== right.created_at ||
+      left.finished_at !== right.finished_at ||
+      left.duration_ms !== right.duration_ms ||
+      left.strategy_label !== right.strategy_label ||
+      left.error !== right.error
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function renderConfigValue(value: unknown): React.ReactNode {
@@ -166,7 +206,7 @@ function RequestSnapshot({
     { key: "benchmark", label: "基准" },
     { key: "stockUniverse", label: "股票/范围" },
     { key: "cash", label: "初始资金" },
-    { key: "holdingPeriod", label: "持股周期" },
+    { key: "holdingPeriod", label: "持有周期" },
     { key: "maxPositionLimit", label: "最大持仓数" },
     { key: "dailyBuyCountLimit", label: "单日最大买入" },
     { key: "dailySellCountLimit", label: "单日最大卖出" },
@@ -180,9 +220,9 @@ function RequestSnapshot({
     { key: "sellTimeType", label: "卖出时间类型" },
     { key: "sellTime", label: "卖出时间" },
     { key: "buyPriority", label: "买入优先级" },
-    { key: "buyPriorityFactorsDiretion", label: "买入优先级方向" },
+    { key: "buyPriorityFactorsDiretion", label: "买入优先方向" },
     { key: "sellPriority", label: "卖出优先级" },
-    { key: "sellPriorityFactorsDiretion", label: "卖出优先级方向" },
+    { key: "sellPriorityFactorsDiretion", label: "卖出优先方向" },
   ];
 
   const riskFields: SnapshotField[] = [
@@ -526,6 +566,7 @@ function ResultDetail({
   templateDefaults: Record<string, UnknownRecord>;
 }) {
   const kpis = result.kpis || {};
+  const summary = isRecord(result.summary) ? result.summary : {};
   const chartRows = buildChartRows(result);
   const effectiveConfig = buildEffectiveConfig(detail, templateDefaults);
   const requestedConfig = isRecord(detail.request) && isRecord(detail.request.user_config) ? detail.request.user_config : {};
@@ -543,8 +584,28 @@ function ResultDetail({
   const actualBenchmark = appliedConfig.benchmark ?? requestedBenchmark;
   const benchmarkAdjusted =
     hasMeaningfulValue(requestedBenchmark) && hasMeaningfulValue(actualBenchmark) && String(requestedBenchmark) !== String(actualBenchmark);
+  const displayedWinRate = useMemo(() => {
+    const rawWinRate = toFiniteNumber(kpis.winRate);
+    if (rawWinRate !== null && rawWinRate > 0) {
+      return rawWinRate;
+    }
+    const winningTrades = toFiniteNumber(summary.winningTradesCount ?? summary.winningTrades);
+    const losingTrades = toFiniteNumber(summary.losingTradesCount);
+    if (winningTrades !== null && losingTrades !== null && winningTrades + losingTrades > 0) {
+      return winningTrades / (winningTrades + losingTrades);
+    }
+    const dailyWinningRate = toFiniteNumber(summary.dailyWinningRate);
+    if (dailyWinningRate !== null) {
+      return dailyWinningRate;
+    }
+    return rawWinRate;
+  }, [kpis.winRate, summary]);
 
   const [tradePage, setTradePage] = useState(1);
+  const [tradePanelOpen, setTradePanelOpen] = useState(false);
+  const [tradeLoading, setTradeLoading] = useState(false);
+  const [tradeRows, setTradeRows] = useState<Array<Record<string, unknown>>>([]);
+  const [tradeTotal, setTradeTotal] = useState(0);
   const [copiedCodeKey, setCopiedCodeKey] = useState("");
   const [visibleSeries, setVisibleSeries] = useState<Record<string, boolean>>({
     portfolioValue: true,
@@ -554,15 +615,15 @@ function ResultDetail({
   });
   const [selectedIndicators, setSelectedIndicators] = useState<Record<string, boolean>>({});
   const pageSize = 20;
-  const tradeRows = result.trades || [];
-  const totalPages = Math.max(1, Math.ceil(tradeRows.length / pageSize));
-  const start = (tradePage - 1) * pageSize;
-  const end = Math.min(tradeRows.length, start + pageSize);
-  const pageRows = tradeRows.slice(start, end);
-  const tradeColumns = pageRows[0] ? Object.keys(pageRows[0]) : tradeRows[0] ? Object.keys(tradeRows[0]) : [];
+  const totalPages = Math.max(1, Math.ceil(tradeTotal / pageSize));
+  const tradeColumns = tradeRows[0] ? Object.keys(tradeRows[0]) : [];
 
   useEffect(() => {
     setTradePage(1);
+    setTradePanelOpen(false);
+    setTradeLoading(false);
+    setTradeRows([]);
+    setTradeTotal(0);
     setCopiedCodeKey("");
     setVisibleSeries({
       portfolioValue: true,
@@ -572,6 +633,28 @@ function ResultDetail({
     });
     setSelectedIndicators({});
   }, [result.run_id]);
+
+  useEffect(() => {
+    if (!tradePanelOpen) return;
+    let cancelled = false;
+    const loadTrades = async () => {
+      setTradeLoading(true);
+      try {
+        const page = await fetchTradePage(result.run_id, tradePage, pageSize);
+        if (cancelled) return;
+        setTradeRows(page.items);
+        setTradeTotal(page.total);
+      } finally {
+        if (!cancelled) {
+          setTradeLoading(false);
+        }
+      }
+    };
+    loadTrades().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [pageSize, result.run_id, tradePage, tradePanelOpen]);
 
   const codeCards = [
     {
@@ -623,8 +706,8 @@ function ResultDetail({
             <strong>降级完成：</strong>
             <span>
               {(result.degraded_reasons || []).length > 0
-                ? (result.degraded_reasons || []).map((item) => degradedReasonLabel(item)).join("；")
-                : "结果可用但存在数据完整性风险"}
+                ? (result.degraded_reasons || []).map((item) => degradedReasonLabel(item)).join("，")
+                : "结果可用，但存在数据完整性风险。"}
             </span>
           </div>
         ) : null}
@@ -663,11 +746,11 @@ function ResultDetail({
         </div>
         <div className="stat">
           <span>交易次数</span>
-          <strong>{metric(kpis.numTrades)}</strong>
+          <strong>{metricInteger(kpis.numTrades)}</strong>
         </div>
         <div className="stat">
           <span>胜率(%)</span>
-          <strong>{metricPercent(kpis.winRate)}</strong>
+          <strong>{metricPercent(displayedWinRate)}</strong>
         </div>
         <div className="stat">
           <span>换手率(%)</span>
@@ -899,11 +982,21 @@ function ResultDetail({
       </section>
 
       <section className="card">
-        <details className="result-details">
+        <details
+          className="result-details"
+          onToggle={(event) => {
+            const open = (event.currentTarget as HTMLDetailsElement).open;
+            setTradePanelOpen(open);
+            if (!open) {
+              setTradePage(1);
+            }
+          }}
+        >
           <summary>历史交易明细（仅当前任务）</summary>
           <p className="muted">
-            共 {tradeRows.length} 条，当前第 {tradePage}/{totalPages} 页
+            共 {tradeTotal} 条，当前第 {tradePage}/{totalPages} 页
           </p>
+          {tradeLoading ? <p className="muted">交易明细加载中...</p> : null}
           <div className="table-wrap">
             <table>
               <thead>
@@ -914,7 +1007,7 @@ function ResultDetail({
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((row, idx) => (
+                {tradeRows.map((row, idx) => (
                   <tr key={idx}>
                     {tradeColumns.map((col) => (
                       <td key={col}>{String((row as Record<string, unknown>)[col] ?? "")}</td>
@@ -931,7 +1024,7 @@ function ResultDetail({
             <button
               type="button"
               onClick={() => setTradePage((p) => Math.min(totalPages, p + 1))}
-              disabled={tradePage >= totalPages}
+              disabled={tradePage >= totalPages || tradeTotal === 0}
             >
               下一页
             </button>
@@ -952,15 +1045,20 @@ export function AnalysisPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [deletingRunId, setDeletingRunId] = useState("");
   const selectedRunId = searchParams.get("run_id");
+  const hasRunningTask = tasks.some((item) => item.status === "running");
+  const selectedSummary = useMemo(
+    () => tasks.find((item) => item.run_id === selectedRunId) || null,
+    [tasks, selectedRunId]
+  );
 
   useEffect(() => {
     let cancelled = false;
     const loadList = async () => {
       try {
-        const items = await fetchBacktests(300);
+        const items = await fetchBacktests(TASK_LIST_LIMIT);
         if (cancelled) return;
-        setTasks(items);
-        if ((!selectedRunId || !items.some((item) => item.run_id === selectedRunId)) && items.length > 0) {
+        setTasks((prev) => (tasksEqual(prev, items) ? prev : items));
+        if (!selectedRunId && items.length > 0) {
           setSearchParams({ run_id: items[0].run_id }, { replace: true });
         } else if (items.length === 0 && selectedRunId) {
           setSearchParams({}, { replace: true });
@@ -970,14 +1068,15 @@ export function AnalysisPage() {
       }
     };
     loadList().catch(() => undefined);
+    const pollMs = hasRunningTask ? LIST_POLL_ACTIVE_MS : LIST_POLL_IDLE_MS;
     const timer = window.setInterval(() => {
       loadList().catch(() => undefined);
-    }, 3000);
+    }, pollMs);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [selectedRunId, setSearchParams]);
+  }, [hasRunningTask, selectedRunId, setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -998,6 +1097,7 @@ export function AnalysisPage() {
       setDetail(null);
       return;
     }
+    const shouldPollDetail = selectedSummary?.status === "running" || detail?.status === "running";
     let cancelled = false;
     const loadDetail = async () => {
       setLoadingDetail(true);
@@ -1013,19 +1113,19 @@ export function AnalysisPage() {
       }
     };
     loadDetail().catch(() => undefined);
-    const timer = window.setInterval(() => {
-      loadDetail().catch(() => undefined);
-    }, 2000);
+    const timer = shouldPollDetail
+      ? window.setInterval(() => {
+          loadDetail().catch(() => undefined);
+        }, DETAIL_POLL_MS)
+      : null;
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer) {
+        window.clearInterval(timer);
+      }
     };
-  }, [selectedRunId, setLastResult]);
+  }, [detail?.status, selectedRunId, selectedSummary?.status, setLastResult]);
 
-  const selectedSummary = useMemo(
-    () => tasks.find((item) => item.run_id === selectedRunId) || null,
-    [tasks, selectedRunId]
-  );
   const templateDefaults = useMemo<Record<string, UnknownRecord>>(() => {
     const map: Record<string, UnknownRecord> = {};
     for (const item of templates) {
@@ -1039,7 +1139,7 @@ export function AnalysisPage() {
   const handleDeleteTask = async (runId: string) => {
     const target = tasks.find((item) => item.run_id === runId);
     const title = target?.strategy_label || runId;
-    if (!window.confirm(`确认删除任务“${title}”？删除后将不再参与 AI 推荐策略汇总。`)) {
+    if (!window.confirm(`确认删除任务“${title}”吗？删除后将不再参与 AI 推荐策略汇总。`)) {
       return;
     }
     setDeletingRunId(runId);
@@ -1160,3 +1260,4 @@ export function AnalysisPage() {
     </div>
   );
 }
+

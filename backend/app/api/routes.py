@@ -109,9 +109,14 @@ def list_backtests(
 
 
 @router.get("/backtests/{run_id}")
-def get_backtest(request: Request, run_id: str) -> dict[str, Any]:
+def get_backtest(
+    request: Request,
+    run_id: str,
+    include_trades: bool = Query(default=False),
+    include_tables: bool = Query(default=False),
+) -> dict[str, Any]:
     container = _container(request)
-    item = container.runs.get(run_id)
+    item = container.runs.get(run_id, include_trades=include_trades, include_tables=include_tables)
     if item is None:
         raise HTTPException(status_code=404, detail=f"run_id not found: {run_id}")
     return item

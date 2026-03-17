@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,13 +25,18 @@ class BacktestRunStore:
         rows = payload.get("runs", []) if isinstance(payload, dict) else []
         if not isinstance(rows, list):
             return
+        needs_persist = False
         for item in rows:
             if not isinstance(item, dict):
                 continue
             run_id = str(item.get("run_id", "")).strip()
             if not run_id:
                 continue
-            self._runs[run_id] = item
+            sanitized_item, changed = self._sanitize_item_for_storage(item)
+            self._runs[run_id] = sanitized_item
+            needs_persist = needs_persist or changed
+        if needs_persist:
+            self._persist_locked()
 
     def _persist_locked(self) -> None:
         if self._store_file is None:
@@ -138,6 +144,48 @@ class BacktestRunStore:
             item["strategy_label"] = self._build_strategy_label(str(item.get("template_id", "")), item.get("request", {}))
         return item
 
+    def _compact_result_for_storage(self, result: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+        compacted = dict(result)
+        changed = False
+        if compacted.get("tables"):
+            compacted["tables"] = {}
+            changed = True
+        elif "tables" in compacted and not isinstance(compacted.get("tables"), dict):
+            compacted["tables"] = {}
+            changed = True
+        return compacted, changed
+
+    def _sanitize_item_for_storage(self, item: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+        sanitized = dict(item)
+        changed = False
+        result = sanitized.get("result")
+        if isinstance(result, dict):
+            compacted_result, result_changed = self._compact_result_for_storage(result)
+            if result_changed:
+                sanitized["result"] = compacted_result
+                changed = True
+        return sanitized, changed
+
+    def _snapshot_item(
+        self,
+        item: dict[str, Any],
+        *,
+        include_trades: bool,
+        include_tables: bool,
+    ) -> dict[str, Any]:
+        snapshot = dict(item)
+        result = snapshot.get("result")
+        if not isinstance(result, dict):
+            return snapshot
+
+        result_snapshot = deepcopy(result)
+        if not include_trades:
+            result_snapshot["trades"] = []
+        if not include_tables:
+            result_snapshot["tables"] = {}
+        snapshot["result"] = result_snapshot
+        return snapshot
+
     def create(self, run_id: str, template_id: str, request_payload: dict[str, Any]) -> dict[str, Any]:
         now = self._now()
         item = {
@@ -165,8 +213,11 @@ class BacktestRunStore:
             if run_id in self._runs:
                 item = self._enrich_item_locked(self._runs[run_id])
                 execution = result.get("execution", {}) if isinstance(result, dict) else {}
+                stored_result = result
+                if isinstance(result, dict):
+                    stored_result, _ = self._compact_result_for_storage(result)
                 item["status"] = "degraded" if bool(result.get("degraded")) else "completed"
-                item["result"] = result
+                item["result"] = stored_result
                 item["error"] = None
                 item["error_detail"] = None
                 item["error_info"] = None
@@ -186,13 +237,19 @@ class BacktestRunStore:
                 item["finished_at"] = self._now()
                 self._persist_locked()
 
-    def get(self, run_id: str) -> dict[str, Any] | None:
+    def get(
+        self,
+        run_id: str,
+        *,
+        include_trades: bool = True,
+        include_tables: bool = False,
+    ) -> dict[str, Any] | None:
         with self._lock:
             item = self._runs.get(run_id)
             if item is None:
                 return None
             item = self._enrich_item_locked(item)
-            return dict(item)
+            return self._snapshot_item(item, include_trades=include_trades, include_tables=include_tables)
 
     def delete(self, run_id: str) -> bool:
         with self._lock:
